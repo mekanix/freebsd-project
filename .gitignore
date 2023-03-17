@@ -1,0 +1,15 @@
+*.o
+*.ko
+.depend
+.depend.*
+*.debug
+*.full
+*.1.gz
+
+kernel/i386
+kernel/machine
+kernel/x86
+kernel/export_syms
+kernel/opt_global.h
+
+program/program
