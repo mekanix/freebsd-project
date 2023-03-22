@@ -12,6 +12,9 @@
 #include <sys/ioccom.h>
 
 #define BUFFER_SIZE 256
+MALLOC_DECLARE(M_ECHOBUF);
+MALLOC_DEFINE(M_ECHOBUF, "echobuffer", "buffer for echo module");
+
 static d_open_t echo_open;
 static d_close_t echo_close;
 static d_read_t echo_read;
@@ -124,10 +127,10 @@ echo_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread 
 				udata->len = kdata.len;
 			} else {
 				kdata.len = udata->len;
-				kdata.buf = malloc(kdata.len, M_TEMP, M_WAITOK);
+				kdata.buf = malloc(kdata.len, M_ECHOBUF, M_WAITOK);
 				error = copyin(udata->buf, kdata.buf, kdata.len);
 				if (error) {
-					free(kdata.buf, M_TEMP);
+					free(kdata.buf, M_ECHOBUF);
 					return error;
 				}
 				if (nvl != NULL) {
@@ -135,7 +138,7 @@ echo_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread 
 					nvl = NULL;
 				}
 				nvl = nvlist_unpack(kdata.buf, kdata.len, 0);
-				free(kdata.buf, M_TEMP);
+				free(kdata.buf, M_ECHOBUF);
 			}
 			break;
 		default:
@@ -154,11 +157,11 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 		case MOD_LOAD:
 			uprintf("Hello, world!\n");
 			sysctl_ctx_init(&clist);
-			message = malloc(sizeof(echo_t), M_TEMP, M_WAITOK);
+			message = malloc(sizeof(echo_t), M_ECHOBUF, M_WAITOK);
 			dev = make_dev(&echo_cdevsw, 0, UID_ROOT, GID_WHEEL, 0666, "echo");
 			poid = SYSCTL_ADD_NODE(
 				&clist,
-				SYSCTL_STATIC_CHILDREN(_hw),
+				SYSCTL_STATIC_CHILDREN(_kern),
 				OID_AUTO,
 				"echo",
 				CTLFLAG_RW,
@@ -197,7 +200,7 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 				return (ENOTEMPTY);
 			}
 			destroy_dev(dev);
-			free(message, M_TEMP);
+			free(message, M_ECHOBUF);
 			nvlist_destroy(nvl);
 			uprintf("Good bye, world!\n");
 			break;
