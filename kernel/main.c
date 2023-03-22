@@ -2,7 +2,7 @@
 #include <sys/module.h>
 #include <sys/kernel.h>
 #include <sys/systm.h>
-
+#include <sys/sysctl.h>
 
 #include <sys/conf.h>
 #include <sys/dnv.h>
@@ -17,6 +17,7 @@ static d_close_t echo_close;
 static d_read_t echo_read;
 static d_write_t echo_write;
 static d_ioctl_t echo_ioctl;
+static long a = 100;
 
 static struct cdevsw echo_cdevsw = {
 	.d_version = D_VERSION,
@@ -43,6 +44,14 @@ typedef struct nvecho {
 static echo_t *message;
 static struct cdev *dev;
 static nvlist_t *nvl = NULL;
+static struct sysctl_ctx_list clist;
+static struct sysctl_oid *poid;
+
+static int
+sysctl_pointless_procedure(SYSCTL_HANDLER_ARGS) {
+	char *buf = "Not at all. They could be carried.";
+	return (sysctl_handle_string(oidp, buf, strlen(buf), req));
+}
 
 static int
 echo_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
@@ -144,10 +153,49 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 	switch (event) {
 		case MOD_LOAD:
 			uprintf("Hello, world!\n");
+			sysctl_ctx_init(&clist);
 			message = malloc(sizeof(echo_t), M_TEMP, M_WAITOK);
 			dev = make_dev(&echo_cdevsw, 0, UID_ROOT, GID_WHEEL, 0666, "echo");
+			poid = SYSCTL_ADD_NODE(
+				&clist,
+				SYSCTL_STATIC_CHILDREN(_hw),
+				OID_AUTO,
+				"echo",
+				CTLFLAG_RW,
+				0,
+				"new top-level tree"
+			);
+			if (poid == NULL) {
+				uprintf("SYSCTL_ADD_NODE failed.\n");
+				return (EINVAL);
+			}
+			SYSCTL_ADD_LONG(
+				&clist,
+				SYSCTL_CHILDREN(poid),
+				OID_AUTO,
+				"long",
+				CTLFLAG_RW,
+				&a,
+				"new long leaf"
+			);
+			SYSCTL_ADD_PROC(
+				&clist,
+				SYSCTL_CHILDREN(poid),
+				OID_AUTO,
+				"proc",
+				CTLTYPE_STRING | CTLFLAG_RD,
+				0,
+				0,
+				sysctl_pointless_procedure,
+				"A",
+				"new proc leaf"
+			);
 			break;
 		case MOD_UNLOAD:
+			if (sysctl_ctx_free(&clist)) {
+				uprintf("sysctl_ctx_free failed.\n");
+				return (ENOTEMPTY);
+			}
 			destroy_dev(dev);
 			free(message, M_TEMP);
 			nvlist_destroy(nvl);
@@ -160,4 +208,4 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 	return error;
 }
 
-DEV_MODULE(hello, modevent, NULL);
+DEV_MODULE(echo, modevent, NULL);
