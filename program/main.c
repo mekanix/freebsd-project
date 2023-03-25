@@ -16,28 +16,90 @@ typedef struct nvecho {
 	size_t len;
 } nvecho_t;
 
+static char *program;
+static enum {IOCTL_GET, IOCTL_SET, SYSCTL_GET, SYSCTL_SET} action = IOCTL_GET;
 #define ECHO_IOCTL _IOWR('H', 1, nvecho_t)
 
-static enum {IOCTL_GET, IOCTL_SET, SYSCTL_GET, SYSCTL_SET} action = IOCTL_GET;
-
-char *program;
-
-void
+static void
 usage() {
 	printf("Usage: %s [-ghs] [-i config file]\n", program);
+}
+
+static void
+uclobj2nv(nvlist_t *nvl, const ucl_object_t *obj) {
+	const char *key = NULL, *value = NULL;
+	const ucl_object_t *cur = NULL;
+	ucl_object_iter_t it = NULL;
+
+	if (nvl == NULL || obj == NULL) {
+		err(1, "NVList or UCL object is NULL in uclobj2nv");
+	}
+	while ((cur = ucl_iterate_object(obj, &it, false))) {
+		key = ucl_object_key(cur);
+		if (key == NULL) {
+			continue;
+		}
+		if (cur->type == UCL_OBJECT) {
+			nvlist_t *nested = nvlist_create(0);
+			if (nested == NULL) {
+				err(1, "nvlist_create");
+			}
+			nvlist_add_nvlist(nvl, key, nested);
+			uclobj2nv(nested, cur);
+		} else if (cur->type != UCL_ARRAY) {
+			value = ucl_object_tostring_forced(cur);
+			printf("adding %s: %s\n", key, value);
+			nvlist_add_string(nvl, key, value);
+		}
+	}
+}
+
+static nvlist_t *
+ucl2nv(struct ucl_parser *parser) {
+	nvlist_t *nvl;
+	ucl_object_t *top;
+
+	top = ucl_parser_get_object(parser);
+	if (top == NULL) {
+		err(1, "UCL get object");
+	}
+	nvl = nvlist_create(0);
+	if (nvl == NULL) {
+		err(1, "nvlist_create");
+	}
+	uclobj2nv(nvl, top);
+	ucl_object_unref(top);
+	return nvl;
+}
+
+static void
+print_nvlist(const nvlist_t *nvl) {
+	const char *name = NULL;
+	void *cookie = NULL;
+	int type;
+
+	if (nvl == NULL) {
+		return;
+	}
+	do {
+		while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
+			if (type == NV_TYPE_NVLIST) {
+				nvl = nvlist_get_nvlist(nvl, name);
+				cookie = NULL;
+			} else if (type == NV_TYPE_NVLIST_ARRAY) {
+				nvl = nvlist_get_nvlist_array(nvl, name, NULL)[0];
+				cookie = NULL;
+			}
+		}
+	} while ((nvl = nvlist_get_pararr(nvl, &cookie)) != NULL);
 }
 
 int
 main(int argc, char **argv) {
 	size_t size;
 	int ch, r = 0, fd, rc;
-	nvlist_t *nvl;
-	nvecho_t data;
-	const char *param, *config;
-	struct ucl_parser *parser = NULL;
-	ucl_object_t *obj = NULL;
-	const ucl_object_t *o = NULL;
-	ucl_object_iter_t it = NULL;
+	nvecho_t data = {0};
+	const char *config;
 
 	program = argv[0];
 	while ((ch = getopt(argc, argv, "ghi:s:q")) != -1) {
@@ -69,25 +131,23 @@ main(int argc, char **argv) {
 	argv += optind;
 
 	if (action == IOCTL_SET || action == SYSCTL_SET) {
-		parser = ucl_parser_new(0);
-		nvl = nvlist_create(0);
+		nvlist_t *nvl = NULL;
+		struct ucl_parser *parser = ucl_parser_new(0);
+
 		if (!ucl_parser_add_file(parser, config)) {
 			err(1, "Parsing %s", config);
 		}
 		if (ucl_parser_get_error(parser)) {
 			err(1, "UCL parser");
 		}
-		if ((obj = ucl_parser_get_object(parser)) == NULL) {
-			err(1, "UCL get object");
-		}
-
-		o = ucl_iterate_object(obj, &it, true);
-		nvlist_add_string(nvl, ucl_object_key(o), ucl_object_tostring_forced(o));
-		data.buf = nvlist_pack(nvl, &data.len);
-
-		nvlist_destroy(nvl);
-		ucl_object_unref(obj);
+		nvl = ucl2nv(parser);
 		ucl_parser_free(parser);
+		if (nvl == NULL) {
+			err(1, "empty config nvlist");
+		}
+		print_nvlist(nvl);
+		data.buf = nvlist_pack(nvl, &data.len);
+		nvlist_destroy(nvl);
 
 		if (action == IOCTL_SET) {
 			fd = open("/dev/echo", O_RDWR);
@@ -105,10 +165,9 @@ main(int argc, char **argv) {
 				err(1, "Set sysctl value");
 			}
 		}
-		printf("Configuration loaded\n");
 	} else if (action == IOCTL_GET) {
-		data.buf = 0;
-		data.len = 0;
+		nvlist_t *nvl = NULL;
+
 		fd = open("/dev/echo", O_RDWR);
 		if (fd < 0) {
 			err(1, "open(/dev/echo)");
@@ -124,33 +183,31 @@ main(int argc, char **argv) {
 			err(1, "ioctl(/dev/echo)");
 		}
 		nvl = nvlist_unpack(data.buf, data.len, 0);
-		param = dnvlist_get_string(nvl, "param", NULL);
-		if (param) {
-			printf("param = %s\n", param);
-		} else {
-			err(1, "nvlist error");
+		if (nvl == NULL) {
+			err(1, "unpacking nvlist data");
 		}
+		print_nvlist(nvl);
 		nvlist_destroy(nvl);
-		free(data.buf);
 		close (fd);
 	} else if (action == SYSCTL_GET) {
+		nvlist_t *nvl = NULL;
+
 		rc = sysctlbyname("kern.echo.config", NULL, &data.len, NULL, 0);
 		if (rc != 0) {
 			err(1, "Get sysctl size");
 		}
-		data.buf = malloc(data.len);
 		rc = sysctlbyname("kern.echo.config", data.buf, &data.len, NULL, 0);
 		if (rc != 0) {
 			err(1, "Get sysctl value");
 		}
 		nvl = nvlist_unpack(data.buf, data.len, 0);
-		param = dnvlist_get_string(nvl, "param", NULL);
-		if (param) {
-			printf("param = %s\n", param);
-		} else {
-			err(1, "nvlist error");
+		if (nvl == NULL) {
+			err(1, "unpacking nvlist data");
 		}
+		print_nvlist(nvl);
 		nvlist_destroy(nvl);
+	}
+	if (data.buf != NULL) {
 		free(data.buf);
 	}
 	return 0;
