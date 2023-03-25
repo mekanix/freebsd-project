@@ -38,8 +38,6 @@ main(int argc, char **argv) {
 	ucl_object_t *obj = NULL;
 	const ucl_object_t *o = NULL;
 	ucl_object_iter_t it = NULL;
-	long value;
-	size_t valsize;
 
 	program = argv[0];
 	while ((ch = getopt(argc, argv, "ghi:s:q")) != -1) {
@@ -96,19 +94,18 @@ main(int argc, char **argv) {
 			if (fd < 0) {
 				err(1, "open(/dev/echo)");
 			}
-			printf("data size: %zu\n", data.len);
 			rc = ioctl(fd, ECHO_IOCTL, &data);
 			if (rc < 0) {
 				err(1, "ioctl(/dev/echo)");
 			}
 			close (fd);
 		} else {
-			printf("Userspace: %zu\n", data.len);
-			rc = sysctlbyname("kern.echo.opaque", NULL, NULL, &data, sizeof(data));
+			rc = sysctlbyname("kern.echo.config", NULL, NULL, data.buf, data.len);
 			if (rc != 0) {
 				err(1, "Set sysctl value");
 			}
 		}
+		printf("Configuration loaded\n");
 	} else if (action == IOCTL_GET) {
 		data.buf = 0;
 		data.len = 0;
@@ -134,22 +131,27 @@ main(int argc, char **argv) {
 			err(1, "nvlist error");
 		}
 		nvlist_destroy(nvl);
+		free(data.buf);
 		close (fd);
 	} else if (action == SYSCTL_GET) {
-		rc = sysctlbyname("kern.echo.long", &value, &valsize, NULL, 0);
+		rc = sysctlbyname("kern.echo.config", NULL, &data.len, NULL, 0);
+		if (rc != 0) {
+			err(1, "Get sysctl size");
+		}
+		data.buf = malloc(data.len);
+		rc = sysctlbyname("kern.echo.config", data.buf, &data.len, NULL, 0);
 		if (rc != 0) {
 			err(1, "Get sysctl value");
 		}
-		value = 1024;
-		rc = sysctlbyname("kern.echo.long", NULL, NULL, &value, valsize);
-		if (rc != 0) {
-			err(1, "Set sysctl value");
+		nvl = nvlist_unpack(data.buf, data.len, 0);
+		param = dnvlist_get_string(nvl, "param", NULL);
+		if (param) {
+			printf("param = %s\n", param);
+		} else {
+			err(1, "nvlist error");
 		}
-		data.len = 1122;
-		rc = sysctlbyname("kern.echo.opaque", NULL, NULL, &data, sizeof(data));
-		if (rc != 0) {
-			err(1, "Set sysctl value");
-		}
+		nvlist_destroy(nvl);
+		free(data.buf);
 	}
 	return 0;
 }

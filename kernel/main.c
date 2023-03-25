@@ -5,7 +5,6 @@
 #include <sys/sysctl.h>
 
 #include <sys/conf.h>
-#include <sys/dnv.h>
 #include <sys/malloc.h>
 #include <sys/nv.h>
 #include <sys/uio.h>
@@ -17,26 +16,14 @@ MALLOC_DEFINE(M_ECHOBUF, "echobuffer", "buffer for echo module");
 
 static d_open_t echo_open;
 static d_close_t echo_close;
-static d_read_t echo_read;
-static d_write_t echo_write;
 static d_ioctl_t echo_ioctl;
-static long a = 100;
-
 static struct cdevsw echo_cdevsw = {
 	.d_version = D_VERSION,
 	.d_open = echo_open,
 	.d_close = echo_close,
-	.d_read = echo_read,
-	.d_write = echo_write,
 	.d_ioctl = echo_ioctl,
 	.d_name = "echo"
 };
-
-typedef struct echo {
-	char buffer[BUFFER_SIZE + 1];
-	int length;
-} echo_t;
-
 typedef struct nvecho {
 	void *buf;
 	size_t len;
@@ -44,51 +31,9 @@ typedef struct nvecho {
 
 #define ECHO_IOCTL _IOWR('H', 1, nvecho_t)
 
-static echo_t *message;
-static struct cdev *dev;
-static nvlist_t *nvl = {0};
-static struct sysctl_ctx_list clist;
-static struct sysctl_oid *poid;
-static nvecho_t nvdata = {0};
-static const char *param;
-
-
-static int
-sysctl_pointless_procedure(SYSCTL_HANDLER_ARGS) {
-	char *buf = "Not at all. They could be carried.";
-	return (sysctl_handle_string(oidp, buf, strlen(buf), req));
-}
-
-static int
-sysctl_nvlist(SYSCTL_HANDLER_ARGS) {
-	int error;
-	nvecho_t kdata;
-
-	SYSCTL_IN(req, &nvdata, sizeof(nvdata));
-	kdata.len = nvdata.len;
-	kdata.buf = malloc(kdata.len, M_ECHOBUF, M_WAITOK);
-	error = copyin(nvdata.buf, kdata.buf, kdata.len);
-	if (error) {
-		free(kdata.buf, M_ECHOBUF);
-		return error;
-	}
-	if (nvl != NULL) {
-		nvlist_destroy(nvl);
-	}
-	nvl = nvlist_unpack(kdata.buf, kdata.len, 0);
-	if (nvl == NULL) {
-		uprintf("Could not unpack nvlist!\n");
-		free(nvdata.buf, M_ECHOBUF);
-		return EINVAL;
-	}
-	uprintf("nvlist unpacked\n");
-	free(kdata.buf, M_ECHOBUF);
-	param = dnvlist_get_string(nvl, "param", NULL);
-	if (param) {
-		uprintf("kernel: param = %s\n", param);
-	}
-	return 0;
-}
+static struct cdev *dev = NULL;
+static nvlist_t *nvl = NULL;
+static struct sysctl_ctx_list clist = {0};
 
 static int
 echo_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
@@ -100,38 +45,6 @@ static int
 echo_close(struct cdev *dev, int fflag, int devtype, struct thread *td)
 {
 	return 0;
-}
-
-static int
-echo_write(struct cdev *dev, struct uio *uio, int ioflag)
-{
-	int error;
-	size_t amt;
-
-	amt = MIN(uio->uio_resid, BUFFER_SIZE);
-	error = uiomove(message->buffer, amt, uio);
-	if (error != 0) {
-		uprintf("Write failed.\n");
-		return error;
-	}
-	message->length = amt;
-	message->buffer[amt] = '\0';
-	return error;
-}
-
-static int
-echo_read(struct cdev *dev, struct uio *uio, int ioflag)
-{
-	int error;
-	int amount;
-
-	amount = MIN(uio->uio_resid,
-		(message->length - uio->uio_offset > 0) ?
-		message->length - uio->uio_offset : 0);
-	error = uiomove(message->buffer + uio->uio_offset, amount, uio);
-	if (error != 0)
-		uprintf("Read failed.\n");
-	return (error);
 }
 
 static int
@@ -183,16 +96,50 @@ echo_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread 
 }
 
 static int
+echo_sysctl(SYSCTL_HANDLER_ARGS) {
+	nvecho_t kdata = {0};
+
+	if (req->newptr) {
+		kdata.len = req->newlen;
+		kdata.buf = malloc(kdata.len, M_ECHOBUF, M_WAITOK);
+		SYSCTL_IN(req, kdata.buf, kdata.len);
+		if (nvl != NULL) {
+			nvlist_destroy(nvl);
+		}
+		nvl = nvlist_unpack(kdata.buf, kdata.len, 0);
+		if (nvl == NULL) {
+			uprintf("Could not unpack nvlist!\n");
+			free(kdata.buf, M_ECHOBUF);
+			return EINVAL;
+		}
+		free(kdata.buf, M_ECHOBUF);
+	}
+	if (req->oldptr || req->oldlen) {
+		if (nvl == NULL) {
+			uprintf("No configuration set!\n");
+			return ENOMEM;
+		}
+		kdata.buf = nvlist_pack(nvl, &kdata.len);
+		if (kdata.buf == NULL) {
+			uprintf("Error packing data\n");
+			return EINVAL;
+		}
+		SYSCTL_OUT(req, kdata.buf, kdata.len);
+		free(kdata.buf, M_ECHOBUF);
+	}
+	return 0;
+}
+
+static int
 modevent(module_t mod __unused, int event, void *arg __unused)
 {
 	int error = 0;
+	struct sysctl_oid *poid;
 
 	switch (event) {
 		case MOD_LOAD:
-			uprintf("Hello, world!\n");
-			sysctl_ctx_init(&clist);
-			message = malloc(sizeof(echo_t), M_ECHOBUF, M_WAITOK);
 			dev = make_dev(&echo_cdevsw, 0, UID_ROOT, GID_WHEEL, 0666, "echo");
+			sysctl_ctx_init(&clist);
 			poid = SYSCTL_ADD_NODE(
 				&clist,
 				SYSCTL_STATIC_CHILDREN(_kern),
@@ -206,38 +153,17 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 				uprintf("SYSCTL_ADD_NODE failed.\n");
 				return EINVAL;
 			}
-			SYSCTL_ADD_LONG(
-				&clist,
-				SYSCTL_CHILDREN(poid),
-				OID_AUTO,
-				"long",
-				CTLFLAG_RW,
-				&a,
-				"new long leaf"
-			);
 			SYSCTL_ADD_PROC(
 				&clist,
 				SYSCTL_CHILDREN(poid),
 				OID_AUTO,
-				"proc",
-				CTLTYPE_STRING | CTLFLAG_RD,
-				0,
-				0,
-				sysctl_pointless_procedure,
-				"A",
-				"new proc leaf"
-			);
-			SYSCTL_ADD_PROC(
-				&clist,
-				SYSCTL_CHILDREN(poid),
-				OID_AUTO,
-				"opaque",
+				"config",
 				CTLTYPE_OPAQUE | CTLFLAG_RW,
-				&nvdata,
-				sizeof(nvdata),
-				sysctl_nvlist,
+				NULL,
+				0,
+				echo_sysctl,
 				"S,nvecho",
-				"new nvlist leaf"
+				"Configure using nvlist"
 			);
 			break;
 		case MOD_UNLOAD:
@@ -246,9 +172,7 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 				return ENOTEMPTY;
 			}
 			destroy_dev(dev);
-			free(message, M_ECHOBUF);
 			nvlist_destroy(nvl);
-			uprintf("Good bye, world!\n");
 			break;
 		default:
 			error = EOPNOTSUPP;
