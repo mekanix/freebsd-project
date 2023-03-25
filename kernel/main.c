@@ -46,14 +46,48 @@ typedef struct nvecho {
 
 static echo_t *message;
 static struct cdev *dev;
-static nvlist_t *nvl = NULL;
+static nvlist_t *nvl = {0};
 static struct sysctl_ctx_list clist;
 static struct sysctl_oid *poid;
+static nvecho_t nvdata = {0};
+static const char *param;
+
 
 static int
 sysctl_pointless_procedure(SYSCTL_HANDLER_ARGS) {
 	char *buf = "Not at all. They could be carried.";
 	return (sysctl_handle_string(oidp, buf, strlen(buf), req));
+}
+
+static int
+sysctl_nvlist(SYSCTL_HANDLER_ARGS) {
+	int error;
+	nvecho_t kdata;
+
+	SYSCTL_IN(req, &nvdata, sizeof(nvdata));
+	kdata.len = nvdata.len;
+	kdata.buf = malloc(kdata.len, M_ECHOBUF, M_WAITOK);
+	error = copyin(nvdata.buf, kdata.buf, kdata.len);
+	if (error) {
+		free(kdata.buf, M_ECHOBUF);
+		return error;
+	}
+	if (nvl != NULL) {
+		nvlist_destroy(nvl);
+	}
+	nvl = nvlist_unpack(kdata.buf, kdata.len, 0);
+	if (nvl == NULL) {
+		uprintf("Could not unpack nvlist!\n");
+		free(nvdata.buf, M_ECHOBUF);
+		return EINVAL;
+	}
+	uprintf("nvlist unpacked\n");
+	free(kdata.buf, M_ECHOBUF);
+	param = dnvlist_get_string(nvl, "param", NULL);
+	if (param) {
+		uprintf("kernel: param = %s\n", param);
+	}
+	return 0;
 }
 
 static int
@@ -166,11 +200,11 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 				"echo",
 				CTLFLAG_RW,
 				0,
-				"new top-level tree"
+				"new tree"
 			);
 			if (poid == NULL) {
 				uprintf("SYSCTL_ADD_NODE failed.\n");
-				return (EINVAL);
+				return EINVAL;
 			}
 			SYSCTL_ADD_LONG(
 				&clist,
@@ -193,11 +227,23 @@ modevent(module_t mod __unused, int event, void *arg __unused)
 				"A",
 				"new proc leaf"
 			);
+			SYSCTL_ADD_PROC(
+				&clist,
+				SYSCTL_CHILDREN(poid),
+				OID_AUTO,
+				"opaque",
+				CTLTYPE_OPAQUE | CTLFLAG_RW,
+				&nvdata,
+				sizeof(nvdata),
+				sysctl_nvlist,
+				"S,nvecho",
+				"new nvlist leaf"
+			);
 			break;
 		case MOD_UNLOAD:
 			if (sysctl_ctx_free(&clist)) {
 				uprintf("sysctl_ctx_free failed.\n");
-				return (ENOTEMPTY);
+				return ENOTEMPTY;
 			}
 			destroy_dev(dev);
 			free(message, M_ECHOBUF);
