@@ -26,30 +26,32 @@ usage() {
 }
 
 static void
-uclobj2nv(nvlist_t *nvl, const ucl_object_t *obj) {
-	const char *key = NULL, *value = NULL;
-	const ucl_object_t *cur = NULL;
-	ucl_object_iter_t it = NULL;
+uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
+	nvlist_t *nested = NULL;
+	const char *key = NULL, *svalue = NULL, *curkey = NULL;
+	const ucl_object_t *obj = NULL, *cur = NULL, *tmp = NULL;
+	ucl_object_iter_t it = NULL, itobj = NULL;
 
-	if (nvl == NULL || obj == NULL) {
+	if (nvl == NULL || top == NULL) {
 		err(1, "NVList or UCL object is NULL in uclobj2nv");
 	}
-	while ((cur = ucl_iterate_object(obj, &it, false))) {
-		key = ucl_object_key(cur);
-		if (key == NULL) {
-			continue;
-		}
-		if (cur->type == UCL_OBJECT) {
-			nvlist_t *nested = nvlist_create(0);
-			if (nested == NULL) {
-				err(1, "nvlist_create");
-			}
-			nvlist_add_nvlist(nvl, key, nested);
-			uclobj2nv(nested, cur);
-		} else if (cur->type != UCL_ARRAY) {
-			value = ucl_object_tostring_forced(cur);
-			printf("adding %s: %s\n", key, value);
-			nvlist_add_string(nvl, key, value);
+
+	while ((obj = ucl_iterate_object(top, &it, false))) {
+		key = ucl_object_key(obj);
+		switch(obj->type) {
+			case UCL_OBJECT:
+				printf("%s {\n", key);
+				while ((cur = ucl_iterate_object(obj, &itobj, true))) {
+					uclobj2nv(nvl, cur);
+				}
+				printf("}\n");
+				break;
+			case UCL_ARRAY:
+				printf("found array\n");
+				break;
+			default:
+				printf("%s: %s\n", key, ucl_object_tostring_forced(obj));
+				break;
 		}
 	}
 }
@@ -58,6 +60,8 @@ static nvlist_t *
 ucl2nv(struct ucl_parser *parser) {
 	nvlist_t *nvl;
 	ucl_object_t *top;
+	const ucl_object_t *obj;
+	ucl_object_iter_t it = NULL;
 
 	top = ucl_parser_get_object(parser);
 	if (top == NULL) {
@@ -67,8 +71,11 @@ ucl2nv(struct ucl_parser *parser) {
 	if (nvl == NULL) {
 		err(1, "nvlist_create");
 	}
-	uclobj2nv(nvl, top);
+	while ((obj = ucl_iterate_object(top, &it, true))) {
+		uclobj2nv(nvl, obj);
+	}
 	ucl_object_unref(top);
+	
 	return nvl;
 }
 
