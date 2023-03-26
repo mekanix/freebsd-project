@@ -28,9 +28,10 @@ usage() {
 static void
 uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 	nvlist_t *nested = NULL;
-	const char *key = NULL, *svalue = NULL, *curkey = NULL;
-	const ucl_object_t *obj = NULL, *cur = NULL, *tmp = NULL;
+	const char *key = NULL, *svalue = NULL;
+	const ucl_object_t *obj = NULL, *cur = NULL;
 	ucl_object_iter_t it = NULL, itobj = NULL;
+	bool array = false;
 
 	if (nvl == NULL || top == NULL) {
 		err(1, "NVList or UCL object is NULL in uclobj2nv");
@@ -38,18 +39,27 @@ uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 
 	while ((obj = ucl_iterate_object(top, &it, false))) {
 		key = ucl_object_key(obj);
+		array = obj->next != NULL;
 		switch(obj->type) {
 			case UCL_OBJECT:
-				printf("%s {\n", key);
-				while ((cur = ucl_iterate_object(obj, &itobj, true))) {
-					uclobj2nv(nvl, cur);
+				if (array) {
+					printf("First in array\n");
 				}
+				printf("%s {\n", key);
+				nested = nvlist_create(0);
+				while ((cur = ucl_iterate_object(obj, &itobj, true))) {
+					uclobj2nv(nested, cur);
+				}
+				nvlist_add_nvlist(nvl, key, nested);
 				printf("}\n");
 				break;
 			case UCL_ARRAY:
 				printf("found array\n");
 				break;
 			default:
+				if (array) {
+					printf("First in array\n");
+				}
 				printf("%s: %s\n", key, ucl_object_tostring_forced(obj));
 				break;
 		}
