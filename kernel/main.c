@@ -114,19 +114,17 @@ echo_sysctl(SYSCTL_HANDLER_ARGS) {
 		}
 		free(kdata.buf, M_ECHOBUF);
 	}
-	if (req->oldptr || req->oldlen) {
-		if (nvl == NULL) {
-			uprintf("No configuration set!\n");
-			return ENOMEM;
-		}
-		kdata.buf = nvlist_pack(nvl, &kdata.len);
-		if (kdata.buf == NULL) {
-			uprintf("Error packing data\n");
-			return EINVAL;
-		}
-		SYSCTL_OUT(req, kdata.buf, kdata.len);
-		free(kdata.buf, M_ECHOBUF);
+	if (nvl == NULL) {
+		uprintf("No configuration set!\n");
+		return ENOMEM;
 	}
+	kdata.buf = nvlist_pack(nvl, &kdata.len);
+	if (kdata.buf == NULL) {
+		uprintf("Error packing data\n");
+		return EINVAL;
+	}
+	SYSCTL_OUT(req, kdata.buf, kdata.len);
+	free(kdata.buf, M_ECHOBUF);
 	return 0;
 }
 
