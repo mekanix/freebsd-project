@@ -11,6 +11,12 @@
 #include <ucl.h>
 #include <unistd.h>
 
+static void print_nv(const nvlist_t *nvl, size_t ident);
+static void print_nvlist(const nvlist_t *nvl);
+static void array_add(nvlist_t *nvl, const char *key, const ucl_object_t *obj);
+static void uclobj2nv(nvlist_t *nvl, const ucl_object_t *top);
+static nvlist_t * ucl2nv(struct ucl_parser *parser);
+
 typedef struct nvecho {
 	void *buf;
 	size_t len;
@@ -92,7 +98,7 @@ print_nv(const nvlist_t *nvl, size_t ident) {
 				printf("= [");
 				barray = nvlist_get_bool_array(nvl, name, &nitems);
 				for (size_t i = 0; i < nitems; ++i) {
-					printf("= %s", barray[i] ? "true" : "false");
+					printf("= %s,", barray[i] ? "true" : "false");
 				}
 				printf(" ]");
 				break;
@@ -120,6 +126,58 @@ print_nv(const nvlist_t *nvl, size_t ident) {
 static void
 print_nvlist(const nvlist_t *nvl) {
 	print_nv(nvl, 0);
+}
+
+static void
+array_add(nvlist_t *nvl, const char *key, const ucl_object_t *obj) {
+	bool bvalue;
+	uint64_t ivalue = 0;
+	const char *svalue = NULL;
+	nvlist_t *nested = NULL;
+	const ucl_object_t *cur = NULL;
+	ucl_object_iter_t it = NULL;
+
+	switch(obj->type) {
+		case UCL_OBJECT:
+			nested = nvlist_create(0);
+			while ((cur = ucl_iterate_object(obj, &it, true))) {
+				uclobj2nv(nested, cur);
+			}
+			if (nvlist_exists_nvlist_array(nvl, key)) {
+				nvlist_append_nvlist_array(nvl, key, nested);
+			} else {
+				nvlist_add_nvlist_array(nvl, key, (const nvlist_t * const *)&nested, 1);
+			}
+			break;
+		case UCL_INT:
+			ivalue = ucl_object_toint(obj);
+			if (nvlist_exists_number_array(nvl, key)) {
+				nvlist_append_number_array(nvl, key, ivalue);
+			} else {
+				nvlist_add_number_array(nvl, key, &ivalue, 1);
+			}
+			break;
+		case UCL_FLOAT:
+			break;
+		case UCL_STRING:
+			svalue = ucl_object_tostring(obj);
+			if (nvlist_exists_string_array(nvl, key)) {
+				nvlist_append_string_array(nvl, key, svalue);
+			} else {
+				nvlist_add_string_array(nvl, key, &svalue, 1);
+			}
+			break;
+		case UCL_BOOLEAN:
+			bvalue = ucl_object_toboolean(obj);
+			if (nvlist_exists_bool_array(nvl, key)) {
+				nvlist_append_bool_array(nvl, key, bvalue);
+			} else {
+				nvlist_add_bool_array(nvl, key, &bvalue, 1);
+			}
+			break;
+		case UCL_TIME:
+			break;
+	}
 }
 
 static void
@@ -152,6 +210,9 @@ uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 				}
 				break;
 			case UCL_ARRAY:
+				while ((cur = ucl_iterate_object(obj, &itobj, true))) {
+					array_add(nvl, key, cur);
+				}
 				break;
 			case UCL_INT:
 				ivalue = ucl_object_toint(obj);
@@ -188,10 +249,13 @@ uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 			case UCL_TIME:
 				break;
 			case UCL_USERDATA:
+				nvlist_add_binary(nvl, key, obj->value.ud, obj->len);
 				break;
 			case UCL_NULL:
+				nvlist_add_null(nvl, key);
 				break;
 			default:
+				err(1, "unknown UCL type");
 				break;
 		}
 	}
