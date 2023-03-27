@@ -26,11 +26,95 @@ usage() {
 }
 
 static void
+print_nv(const nvlist_t *nvl, size_t ident) {
+	const char *name = NULL;
+	const char *svalue = NULL;
+	const char * const *sarray = NULL;
+	const nvlist_t * const *arr = NULL;
+	bool bvalue;
+	const bool *barray = NULL;
+	void *cookie = NULL;
+	int type = 0;
+	size_t nitems = 0;
+
+	if (nvl == NULL) {
+		return;
+	}
+
+	while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
+		for (size_t i = 0; i < ident; ++i) {
+			printf("  ");
+		}
+		printf("%s ", name);
+		switch (type) {
+			case NV_TYPE_NVLIST:
+				printf("= {\n");
+				print_nv(nvlist_get_nvlist(nvl, name), ident + 1);
+				for (size_t i = 0; i < ident; ++i) {
+					printf("  ");
+				}
+				printf("}");
+				break;
+			case NV_TYPE_NVLIST_ARRAY:
+				printf("= [\n");
+				arr = nvlist_get_nvlist_array(nvl, name, &nitems);
+				for (size_t i = 0; i < nitems; ++i) {
+					for (size_t i = 0; i < ident + 1; ++i) {
+						printf("  ");
+					}
+					printf("{\n");
+					print_nv(arr[i], ident + 2);
+					for (size_t i = 0; i < ident + 1; ++i) {
+						printf("  ");
+					}
+					printf("}\n");
+				}
+				for (size_t i = 0; i < ident; ++i) {
+					printf("  ");
+				}
+				printf("]");
+				break;
+			case NV_TYPE_STRING_ARRAY:
+				printf("= [");
+				sarray = nvlist_get_string_array(nvl, name, &nitems);
+				for (size_t i = 0; i < nitems; ++i) {
+					printf(" %s,", sarray[i]);
+				}
+				printf(" ]");
+				break;
+			case NV_TYPE_STRING:
+				svalue = nvlist_get_string(nvl, name);
+				printf("= %s", svalue);
+				break;
+			case NV_TYPE_BOOL_ARRAY:
+				printf("= [");
+				barray = nvlist_get_bool_array(nvl, name, &nitems);
+				for (size_t i = 0; i < nitems; ++i) {
+					printf("= %s", barray[i] ? "true" : "false");
+				}
+				printf(" ]");
+				break;
+			case NV_TYPE_BOOL:
+				bvalue = nvlist_get_bool(nvl, name);
+				printf("= %s", bvalue ? "true" : "false");
+				break;
+		}
+		printf("\n");
+	}
+}
+
+static void
+print_nvlist(const nvlist_t *nvl) {
+	print_nv(nvl, 0);
+}
+
+static void
 uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 	nvlist_t *nested = NULL;
-	const char *key = NULL, *value = NULL;
+	const char *key = NULL, *svalue = NULL;
 	const ucl_object_t *obj = NULL, *cur = NULL;
 	ucl_object_iter_t it = NULL, itobj = NULL;
+	bool bvalue;
 
 	if (nvl == NULL || top == NULL) {
 		err(1, "NVList or UCL object is NULL in uclobj2nv");
@@ -54,133 +138,40 @@ uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 				break;
 			case UCL_ARRAY:
 				break;
-			default:
-				value = ucl_object_tostring_forced(obj);
+			case UCL_INT:
+				break;
+			case UCL_FLOAT:
+				break;
+			case UCL_STRING:
+				svalue = ucl_object_tostring_forced(obj);
 				if (nvlist_exists_string_array(nvl, key)) {
-					nvlist_append_string_array(nvl, key, value);
+					nvlist_append_string_array(nvl, key, svalue);
 				} else if (obj->next != NULL) {
-					nvlist_add_string_array(nvl, key, &value, 1);
+					nvlist_add_string_array(nvl, key, &svalue, 1);
 				} else {
-					nvlist_add_string(nvl, key, value);
+					nvlist_add_string(nvl, key, svalue);
 				}
+				break;
+			case UCL_BOOLEAN:
+				bvalue = ucl_object_toboolean(obj);
+				if (nvlist_exists_bool_array(nvl, key)) {
+					nvlist_append_bool_array(nvl, key, bvalue);
+				} else if (obj->next != NULL) {
+					nvlist_add_bool_array(nvl, key, &bvalue, 1);
+				} else {
+					nvlist_add_bool(nvl, key, bvalue);
+				}
+				break;
+			case UCL_TIME:
+				break;
+			case UCL_USERDATA:
+				break;
+			case UCL_NULL:
+				break;
+			default:
 				break;
 		}
 	}
-}
-
-static void
-print_nvlist(const nvlist_t *nvl, size_t ident) {
-	const char *name = NULL;
-	const char *value = NULL;
-	void *cookie = NULL;
-	int type = 0;
-	char closing = 0;
-	const char * const *array = NULL;
-	size_t nitems = 0;
-  const nvlist_t * const *arr = NULL;
-
-	if (nvl == NULL) {
-		return;
-	}
-
-  while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
-    for (size_t i = 0; i < ident; ++i) {
-      printf("  ");
-    }
-    printf("%s ", name);
-    switch (type) {
-      case NV_TYPE_NVLIST:
-        printf("= {\n");
-        print_nvlist(nvlist_get_nvlist(nvl, name), ident + 1);
-        for (size_t i = 0; i < ident; ++i) {
-          printf("  ");
-        }
-        printf("}");
-        break;
-      case NV_TYPE_NVLIST_ARRAY:
-        printf("= [\n");
-        arr = nvlist_get_nvlist_array(nvl, name, &nitems);
-        for (size_t i = 0; i < nitems; ++i) {
-          for (size_t i = 0; i < ident + 1; ++i) {
-            printf("  ");
-          }
-          printf("{\n");
-          print_nvlist(arr[i], ident + 2);
-          for (size_t i = 0; i < ident + 1; ++i) {
-            printf("  ");
-          }
-          printf("}\n");
-        }
-        for (size_t i = 0; i < ident; ++i) {
-          printf("  ");
-        }
-        printf("]");
-        break;
-      case NV_TYPE_STRING_ARRAY:
-        printf("= [");
-        array = nvlist_get_string_array(nvl, name, &nitems);
-        for (size_t i = 0; i < nitems; ++i) {
-          printf(" %s,", array[i]);
-        }
-        printf(" ]");
-        break;
-      case NV_TYPE_STRING:
-        value = nvlist_get_string(nvl, name);
-        printf("= %s", value);
-        break;
-    }
-    printf("\n");
-  }
-	// do {
-	// 	while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
-	// 		for (size_t i = 0; i < ident; ++i) {
-	// 			printf("  ");
-	// 		}
-	// 		printf("%s ", name);
-	// 		switch (type) {
-	// 			case NV_TYPE_NVLIST:
-	// 				++ident;
-	// 				printf("{");
-	// 				parent = nvl;
-	// 				closing = '}';
-	// 				nvl = nvlist_get_nvlist(nvl, name);
-	// 				cookie = NULL;
-	// 				break;
-	// 			case NV_TYPE_NVLIST_ARRAY:
-	// 				++ident;
-	// 				printf("[");
-	// 				closing = ']';
-	// 				nvl = nvlist_get_nvlist_array(nvl, name, &nitems)[0];
-	// 				cookie = NULL;
-	// 				break;
-	// 			case NV_TYPE_STRING_ARRAY:
-	// 				printf("[");
-	// 				array = nvlist_get_string_array(nvl, name, &nitems);
-	// 				for (size_t i = 0; i < nitems; ++i) {
-	// 					printf(" %s,", array[i]);
-	// 				}
-	// 				printf(" ]");
-	// 				break;
-	// 			case NV_TYPE_STRING:
-	// 				value = nvlist_get_string(nvl, name);
-	// 				printf("= %s", value);
-	// 				break;
-	// 			default:
-	// 				printf("type %d", type);
-	// 				break;
-	// 		}
-	// 		printf("\n");
-	// 	}
-	// 	if (ident > 0) {
-	// 		--ident;
-	// 	}
-	// 	for (size_t i = 0; i < ident; ++i) {
-	// 		printf("  ");
-	// 	}
-	// 	if (nvl == parent) {
-	// 		printf("%c\n", closing);
-	// 	}
-	// } while ((nvl = nvlist_get_pararr(nvl, &cookie)) != NULL);
 }
 
 static nvlist_t *
@@ -257,7 +248,7 @@ main(int argc, char **argv) {
 		if (nvl == NULL) {
 			err(1, "empty config nvlist");
 		}
-		print_nvlist(nvl, 0);
+		print_nvlist(nvl);
 		data.buf = nvlist_pack(nvl, &data.len);
 		nvlist_destroy(nvl);
 
@@ -298,7 +289,7 @@ main(int argc, char **argv) {
 		if (nvl == NULL) {
 			err(1, "unpacking nvlist data");
 		}
-		print_nvlist(nvl, 0);
+		print_nvlist(nvl);
 		nvlist_destroy(nvl);
 		close (fd);
 	} else if (action == SYSCTL_GET) {
@@ -320,7 +311,7 @@ main(int argc, char **argv) {
 		if (nvl == NULL) {
 			err(1, "unpacking nvlist data");
 		}
-		print_nvlist(nvl, 0);
+		print_nvlist(nvl);
 		nvlist_destroy(nvl);
 	}
 	if (data.buf != NULL) {
