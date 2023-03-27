@@ -36,6 +36,8 @@ print_nv(const nvlist_t *nvl, size_t ident) {
 	void *cookie = NULL;
 	int type = 0;
 	size_t nitems = 0;
+	uint64_t nvalue = 0;
+	const uint64_t *narray = NULL;
 
 	if (nvl == NULL) {
 		return;
@@ -98,6 +100,18 @@ print_nv(const nvlist_t *nvl, size_t ident) {
 				bvalue = nvlist_get_bool(nvl, name);
 				printf("= %s", bvalue ? "true" : "false");
 				break;
+			case NV_TYPE_NUMBER_ARRAY:
+				printf("= [");
+				narray = nvlist_get_number_array(nvl, name, &nitems);
+				for (size_t i = 0; i < nitems; ++i) {
+					printf("= %lu,", narray[i]);
+				}
+				printf(" ]");
+				break;
+			case NV_TYPE_NUMBER:
+				nvalue = nvlist_get_number(nvl, name);
+				printf("= %lu", nvalue);
+				break;
 		}
 		printf("\n");
 	}
@@ -115,6 +129,7 @@ uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 	const ucl_object_t *obj = NULL, *cur = NULL;
 	ucl_object_iter_t it = NULL, itobj = NULL;
 	bool bvalue;
+	uint64_t ivalue = 0;
 
 	if (nvl == NULL || top == NULL) {
 		err(1, "NVList or UCL object is NULL in uclobj2nv");
@@ -139,6 +154,14 @@ uclobj2nv(nvlist_t *nvl, const ucl_object_t *top) {
 			case UCL_ARRAY:
 				break;
 			case UCL_INT:
+				ivalue = ucl_object_toint(obj);
+				if (nvlist_exists_number_array(nvl, key)) {
+					nvlist_append_number_array(nvl, key, ivalue);
+				} else if (obj->next != NULL) {
+					nvlist_add_number_array(nvl, key, &ivalue, 1);
+				} else {
+					nvlist_add_number(nvl, key, ivalue);
+				}
 				break;
 			case UCL_FLOAT:
 				break;
