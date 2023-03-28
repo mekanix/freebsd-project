@@ -33,19 +33,11 @@ usage() {
 
 static void
 print_nv(const nvlist_t *nvl) {
+	size_t size = 0;
 	const char *name = NULL;
-	const char *svalue = NULL;
-	const char * const *sarray = NULL;
-	const nvlist_t * const *arr = NULL;
-	bool bvalue;
-	const bool *barray = NULL;
 	void *cookie = NULL;
 	int type = 0;
-	size_t nitems = 0;
-	uint64_t nvalue = 0;
-	const uint64_t *narray = NULL;
 	char *fmt = NULL;
-	size_t size = 0;
 
 	if (nvl == NULL) {
 		return;
@@ -54,69 +46,86 @@ print_nv(const nvlist_t *nvl) {
 	while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
 		size = strlen(name) + 7;
 		switch (type) {
-			case NV_TYPE_NVLIST:
+			case NV_TYPE_NVLIST: {
 				xo_open_container_d(name);
 				print_nv(nvlist_get_nvlist(nvl, name));
 				xo_close_container_d();
 				break;
-			case NV_TYPE_NVLIST_ARRAY:
-				arr = nvlist_get_nvlist_array(nvl, name, &nitems);
+			}
+			case NV_TYPE_NVLIST_ARRAY: {
+				size_t items;
+				const nvlist_t * const *arr = nvlist_get_nvlist_array(nvl, name, &items);
+
 				xo_open_list_d(name);
-				for (size_t i = 0; i < nitems; ++i) {
+				for (size_t i = 0; i < items; ++i) {
 					xo_open_instance_d(name);
 					print_nv(arr[i]);
 					xo_close_instance_d();
 				}
 				xo_close_list_d();
 				break;
-			case NV_TYPE_STRING_ARRAY:
+			}
+			case NV_TYPE_STRING_ARRAY: {
+				size_t items;
+				const char * const *array = nvlist_get_string_array(nvl, name, &items);
+
 				xo_open_list_d(name);
-				sarray = nvlist_get_string_array(nvl, name, &nitems);
-				for (size_t i = 0; i < nitems; ++i) {
-					xo_emit("{l:name/%s}", sarray[i]);
+				for (size_t i = 0; i < items; ++i) {
+					xo_emit("{l:name/%s}", array[i]);
 				}
 				xo_close_list_d();
 				break;
-			case NV_TYPE_STRING:
-				svalue = nvlist_get_string(nvl, name);
+			}
+			case NV_TYPE_STRING: {
 				fmt = malloc(size + 1);
 				snprintf(fmt, size, "{:%s/%%s}", name);
 				fmt[size] = '\0';
-				xo_emit(fmt, svalue);
+				xo_emit(fmt, nvlist_get_string(nvl, name));
 				break;
-			case NV_TYPE_BOOL_ARRAY:
-				barray = nvlist_get_bool_array(nvl, name, &nitems);
+			}
+			case NV_TYPE_BOOL_ARRAY: {
+				size_t items;
+				const bool *array = nvlist_get_bool_array(nvl, name, &items);
+
 				xo_open_list_d(name);
-				for (size_t i = 0; i < nitems; ++i) {
-					xo_emit("{ln:name/%s}", barray[i] ? "true" : "false");
+				for (size_t i = 0; i < items; ++i) {
+					xo_emit("{ln:name/%s}", array[i] ? "true" : "false");
 				}
 				xo_close_list_d();
 				break;
-			case NV_TYPE_BOOL:
-				bvalue = nvlist_get_bool(nvl, name);
+			}
+			case NV_TYPE_BOOL: {
+				bool value = nvlist_get_bool(nvl, name);
 				fmt = malloc(size + 2);
 				snprintf(fmt, size + 1, "{n:%s/%%s}", name);
 				fmt[size] = '\0';
-				xo_emit(fmt, bvalue ? "true" : "false");
+				xo_emit(fmt, value ? "true" : "false");
 				break;
-			case NV_TYPE_NUMBER_ARRAY:
-				narray = nvlist_get_number_array(nvl, name, &nitems);
+			}
+			case NV_TYPE_NUMBER_ARRAY: {
+				size_t items;
+				const uint64_t *array = nvlist_get_number_array(nvl, name, &items);
+
 				xo_open_list_d(name);
-				for (size_t i = 0; i < nitems; ++i) {
-					xo_emit("{l:name/%lu}", narray[i]);
+				for (size_t i = 0; i < items; ++i) {
+					xo_emit("{l:name/%lu}", array[i]);
 				}
 				xo_close_list_d();
 				break;
-			case NV_TYPE_NUMBER:
-				nvalue = nvlist_get_number(nvl, name);
+			}
+			case NV_TYPE_NUMBER: {
+				uint64_t value = nvlist_get_number(nvl, name);
+
 				fmt = malloc(size + 2);
 				snprintf(fmt, size + 1, "{:%s/%%lu}", name);
 				fmt[size] = '\0';
-				xo_emit(fmt, nvalue);
+				xo_emit(fmt, value);
 				break;
+			}
 		}
 		if (fmt != NULL) {
 			free(fmt);
+			fmt = NULL;
 		}
 	}
 }
