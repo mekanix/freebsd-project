@@ -11,7 +11,7 @@
 #include <ucl.h>
 #include <unistd.h>
 
-static void print_nv(const nvlist_t *nvl, size_t ident);
+static void print_nv(const nvlist_t *nvl);
 static void print_nvlist(const nvlist_t *nvl);
 static void array_add(nvlist_t *nvl, const char *key, const ucl_object_t *obj);
 static void uclobj2nv(nvlist_t *nvl, const ucl_object_t *top);
@@ -32,7 +32,7 @@ usage() {
 }
 
 static void
-print_nv(const nvlist_t *nvl, size_t ident) {
+print_nv(const nvlist_t *nvl) {
 	const char *name = NULL;
 	const char *svalue = NULL;
 	const char * const *sarray = NULL;
@@ -44,88 +44,92 @@ print_nv(const nvlist_t *nvl, size_t ident) {
 	size_t nitems = 0;
 	uint64_t nvalue = 0;
 	const uint64_t *narray = NULL;
+	char *fmt = NULL;
+	size_t size = 0;
 
 	if (nvl == NULL) {
 		return;
 	}
 
 	while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
+		size = strlen(name) + 7;
 		switch (type) {
 			case NV_TYPE_NVLIST:
 				xo_open_container_d(name);
-				print_nv(nvlist_get_nvlist(nvl, name), ident + 1);
+				print_nv(nvlist_get_nvlist(nvl, name));
 				xo_close_container_d();
 				break;
 			case NV_TYPE_NVLIST_ARRAY:
-				// printf("= [\n");
 				arr = nvlist_get_nvlist_array(nvl, name, &nitems);
+				xo_open_list_d(name);
 				for (size_t i = 0; i < nitems; ++i) {
-					// for (size_t i = 0; i < ident + 1; ++i) {
-					// 	printf("  ");
-					// }
-					// printf("{\n");
-					print_nv(arr[i], ident + 2);
-					// for (size_t i = 0; i < ident + 1; ++i) {
-					// 	printf("  ");
-					// }
-					// printf("}\n");
+					xo_open_instance_d(name);
+					print_nv(arr[i]);
+					xo_close_instance_d();
 				}
-				// for (size_t i = 0; i < ident; ++i) {
-				// 	printf("  ");
-				// }
-				// printf("]");
+				xo_close_list_d();
 				break;
 			case NV_TYPE_STRING_ARRAY:
-				// printf("= [");
+				xo_open_list_d(name);
 				sarray = nvlist_get_string_array(nvl, name, &nitems);
-				// for (size_t i = 0; i < nitems; ++i) {
-				// 	printf(" %s,", sarray[i]);
-				// }
-				// printf(" ]");
+				for (size_t i = 0; i < nitems; ++i) {
+					xo_open_instance_d(name);
+					xo_emit("{:name/%s}", sarray[i]);
+					xo_close_instance_d();
+				}
+				xo_close_list_d();
 				break;
 			case NV_TYPE_STRING:
 				svalue = nvlist_get_string(nvl, name);
-				// printf("= %s", svalue);
-				xo_emit("{:value/%s}", svalue);
-				// xo_emit("{k:name/%-*s}", name, svalue);
+				fmt = malloc(size + 1);
+				snprintf(fmt, size, "{:%s/%%s}", name);
+				fmt[size] = '\0';
+				xo_emit(fmt, svalue);
 				break;
 			case NV_TYPE_BOOL_ARRAY:
-				// printf("= [");
 				barray = nvlist_get_bool_array(nvl, name, &nitems);
-				// for (size_t i = 0; i < nitems; ++i) {
-				// 	printf("= %s,", barray[i] ? "true" : "false");
-				// }
-				// printf(" ]");
+				xo_open_list_d(name);
+				for (size_t i = 0; i < nitems; ++i) {
+					xo_open_instance_d(name);
+					xo_emit("{:name/%s}", narray[i] ? "true" : "false");
+					xo_close_instance_d();
+				}
+				xo_close_list_d();
 				break;
 			case NV_TYPE_BOOL:
 				bvalue = nvlist_get_bool(nvl, name);
-				// printf("= %s", bvalue ? "true" : "false");
+				fmt = malloc(size + 1);
+				snprintf(fmt, size, "{:%s/%%s}", name);
+				fmt[size] = '\0';
+				xo_emit(fmt, bvalue ? "true" : "false");
 				break;
 			case NV_TYPE_NUMBER_ARRAY:
-				// printf("= [");
 				narray = nvlist_get_number_array(nvl, name, &nitems);
-				// for (size_t i = 0; i < nitems; ++i) {
-				// 	printf("= %lu,", narray[i]);
-				// }
-				// printf(" ]");
+				xo_open_list_d(name);
+				for (size_t i = 0; i < nitems; ++i) {
+					xo_open_instance_d(name);
+					xo_emit("{:name/%lu}", narray[i]);
+					xo_close_instance_d();
+				}
+				xo_close_list_d();
 				break;
 			case NV_TYPE_NUMBER:
 				nvalue = nvlist_get_number(nvl, name);
-				// printf("= %lu", nvalue);
+				fmt = malloc(size + 2);
+				snprintf(fmt, size + 1, "{:%s/%%lu}", name);
+				fmt[size] = '\0';
+				xo_emit(fmt, nvalue);
 				break;
 		}
-		// printf("\n");
+		if (fmt != NULL) {
+			free(fmt);
+		}
 	}
 }
 
 static void
 print_nvlist(const nvlist_t *nvl) {
-	size_t rc;
-
-	print_nv(nvl, 0);
-	// rc = xo_open_container_d("top");
-	// xo_emit("{:lines/%7ju}", 42);
-	// rc = xo_close_container_d();
+	print_nv(nvl);
 	xo_finish();
 }
 
