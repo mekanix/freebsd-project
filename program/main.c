@@ -50,82 +50,83 @@ print_nv(const nvlist_t *nvl, size_t ident) {
 	}
 
 	while ((name = nvlist_next(nvl, &type, &cookie)) != NULL) {
-		for (size_t i = 0; i < ident; ++i) {
-			printf("  ");
-		}
-		printf("%s ", name);
 		switch (type) {
 			case NV_TYPE_NVLIST:
-				printf("= {\n");
+				xo_open_container_d(name);
 				print_nv(nvlist_get_nvlist(nvl, name), ident + 1);
-				for (size_t i = 0; i < ident; ++i) {
-					printf("  ");
-				}
-				printf("}");
+				xo_close_container_d();
 				break;
 			case NV_TYPE_NVLIST_ARRAY:
-				printf("= [\n");
+				// printf("= [\n");
 				arr = nvlist_get_nvlist_array(nvl, name, &nitems);
 				for (size_t i = 0; i < nitems; ++i) {
-					for (size_t i = 0; i < ident + 1; ++i) {
-						printf("  ");
-					}
-					printf("{\n");
+					// for (size_t i = 0; i < ident + 1; ++i) {
+					// 	printf("  ");
+					// }
+					// printf("{\n");
 					print_nv(arr[i], ident + 2);
-					for (size_t i = 0; i < ident + 1; ++i) {
-						printf("  ");
-					}
-					printf("}\n");
+					// for (size_t i = 0; i < ident + 1; ++i) {
+					// 	printf("  ");
+					// }
+					// printf("}\n");
 				}
-				for (size_t i = 0; i < ident; ++i) {
-					printf("  ");
-				}
-				printf("]");
+				// for (size_t i = 0; i < ident; ++i) {
+				// 	printf("  ");
+				// }
+				// printf("]");
 				break;
 			case NV_TYPE_STRING_ARRAY:
-				printf("= [");
+				// printf("= [");
 				sarray = nvlist_get_string_array(nvl, name, &nitems);
-				for (size_t i = 0; i < nitems; ++i) {
-					printf(" %s,", sarray[i]);
-				}
-				printf(" ]");
+				// for (size_t i = 0; i < nitems; ++i) {
+				// 	printf(" %s,", sarray[i]);
+				// }
+				// printf(" ]");
 				break;
 			case NV_TYPE_STRING:
 				svalue = nvlist_get_string(nvl, name);
-				printf("= %s", svalue);
+				// printf("= %s", svalue);
+				xo_emit("{:value/%s}", svalue);
+				// xo_emit("{k:name/%-*s}", name, svalue);
 				break;
 			case NV_TYPE_BOOL_ARRAY:
-				printf("= [");
+				// printf("= [");
 				barray = nvlist_get_bool_array(nvl, name, &nitems);
-				for (size_t i = 0; i < nitems; ++i) {
-					printf("= %s,", barray[i] ? "true" : "false");
-				}
-				printf(" ]");
+				// for (size_t i = 0; i < nitems; ++i) {
+				// 	printf("= %s,", barray[i] ? "true" : "false");
+				// }
+				// printf(" ]");
 				break;
 			case NV_TYPE_BOOL:
 				bvalue = nvlist_get_bool(nvl, name);
-				printf("= %s", bvalue ? "true" : "false");
+				// printf("= %s", bvalue ? "true" : "false");
 				break;
 			case NV_TYPE_NUMBER_ARRAY:
-				printf("= [");
+				// printf("= [");
 				narray = nvlist_get_number_array(nvl, name, &nitems);
-				for (size_t i = 0; i < nitems; ++i) {
-					printf("= %lu,", narray[i]);
-				}
-				printf(" ]");
+				// for (size_t i = 0; i < nitems; ++i) {
+				// 	printf("= %lu,", narray[i]);
+				// }
+				// printf(" ]");
 				break;
 			case NV_TYPE_NUMBER:
 				nvalue = nvlist_get_number(nvl, name);
-				printf("= %lu", nvalue);
+				// printf("= %lu", nvalue);
 				break;
 		}
-		printf("\n");
+		// printf("\n");
 	}
 }
 
 static void
 print_nvlist(const nvlist_t *nvl) {
+	size_t rc;
+
 	print_nv(nvl, 0);
+	// rc = xo_open_container_d("top");
+	// xo_emit("{:lines/%7ju}", 42);
+	// rc = xo_close_container_d();
+	xo_finish();
 }
 
 static void
@@ -292,6 +293,10 @@ main(int argc, char **argv) {
 	const char *config;
 
 	program = argv[0];
+	argc = xo_parse_args(argc, argv);
+	if (argc < 0) {
+		exit(1);
+	}
 	while ((ch = getopt(argc, argv, "ghi:s:q")) != -1) {
 		switch (ch) {
 			case 'g':

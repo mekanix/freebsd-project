@@ -2,11 +2,11 @@
 .include <src.opts.mk>
 .PATH:		${SRCTOP}/contrib/libucl/include
 CFLAGS+=	-I${SRCTOP}/contrib/libucl/include
-LIBADD=		nv ucl
+LIBADD=		nv ucl xo
 .else
 CFLAGS!=	pkg-config --cflags libucl
 LDFLAGS!=	pkg-config --libs libucl
-LDADD=		-lnv -lucl
+LDADD=		-lnv -lucl -lxo
 .endif
 
 PREFIX?=/usr/local
