@@ -21,10 +21,10 @@ typedef struct nvecho {
 	void *buf;
 	size_t len;
 } nvecho_t;
+#define ECHO_IOCTL _IOWR('H', 1, nvecho_t)
 
 static char *program;
 static enum {IOCTL_GET, IOCTL_SET, SYSCTL_GET, SYSCTL_SET} action = IOCTL_GET;
-#define ECHO_IOCTL _IOWR('H', 1, nvecho_t)
 
 static void
 usage() {
@@ -88,14 +88,14 @@ print_nv(const nvlist_t *nvl) {
 				barray = nvlist_get_bool_array(nvl, name, &nitems);
 				xo_open_list_d(name);
 				for (size_t i = 0; i < nitems; ++i) {
-					xo_emit("{l:name/%s}", barray[i] ? "true" : "false");
+					xo_emit("{ln:name/%s}", barray[i] ? "true" : "false");
 				}
 				xo_close_list_d();
 				break;
 			case NV_TYPE_BOOL:
 				bvalue = nvlist_get_bool(nvl, name);
-				fmt = malloc(size + 1);
-				snprintf(fmt, size, "{:%s/%%s}", name);
+				fmt = malloc(size + 2);
+				snprintf(fmt, size + 1, "{n:%s/%%s}", name);
 				fmt[size] = '\0';
 				xo_emit(fmt, bvalue ? "true" : "false");
 				break;
