@@ -73,9 +73,7 @@ print_nv(const nvlist_t *nvl) {
 				xo_open_list_d(name);
 				sarray = nvlist_get_string_array(nvl, name, &nitems);
 				for (size_t i = 0; i < nitems; ++i) {
-					xo_open_instance_d(name);
-					xo_emit("{:name/%s}", sarray[i]);
-					xo_close_instance_d();
+					xo_emit("{l:name/%s}", sarray[i]);
 				}
 				xo_close_list_d();
 				break;
@@ -90,9 +88,7 @@ print_nv(const nvlist_t *nvl) {
 				barray = nvlist_get_bool_array(nvl, name, &nitems);
 				xo_open_list_d(name);
 				for (size_t i = 0; i < nitems; ++i) {
-					xo_open_instance_d(name);
-					xo_emit("{:name/%s}", narray[i] ? "true" : "false");
-					xo_close_instance_d();
+					xo_emit("{l:name/%s}", barray[i] ? "true" : "false");
 				}
 				xo_close_list_d();
 				break;
@@ -107,9 +103,7 @@ print_nv(const nvlist_t *nvl) {
 				narray = nvlist_get_number_array(nvl, name, &nitems);
 				xo_open_list_d(name);
 				for (size_t i = 0; i < nitems; ++i) {
-					xo_open_instance_d(name);
-					xo_emit("{:name/%lu}", narray[i]);
-					xo_close_instance_d();
+					xo_emit("{l:name/%lu}", narray[i]);
 				}
 				xo_close_list_d();
 				break;
