@@ -57,28 +57,31 @@ attr_t *new_param(char *name) {
   return node;
 }
 
-attr_t *new_number(char *name) {
+attr_t *new_number(char *name, uint64_t value) {
   attr_t *node = new_param(name);
   node->type = ATTR_NUMBER;
+  node->value.num = value;
   return node;
 }
 
-attr_t *new_bool(char *name) {
+attr_t *new_bool(char *name, bool value) {
   attr_t *node = new_param(name);
   node->type = ATTR_BOOL;
+  node->value.b = value;
   return node;
 }
 
-attr_t *new_string(char *name) {
+attr_t *new_string(char *name, char *value) {
   attr_t *node = new_param(name);
   node->type = ATTR_STRING;
+  node->value.string = value;
   return node;
 }
 
 attr_t *new_null(char *name) {
   attr_t *node = new_param(name);
-  node->value.ptr = NULL;
   node->type = ATTR_NULL;
+  node->value.ptr = NULL;
   return node;
 }
 
@@ -101,31 +104,21 @@ attr_t *new_array(char *name) {
 int main() {
   attr_t *node = NULL;
   attr_t *tmpnode = NULL;
+  attr_t *arr = NULL;
   params_t *params = NULL;
 
   params = malloc(sizeof(params_t));
   RB_INIT(params);
 
-  for (uint64_t n = 0; n < 6; ++n) {
-    node = new_number("cvrc");
-    node->value.num = n;
-    // TAILQ_INSERT_TAIL(&array, node, next);
-    tmpnode = RB_INSERT(params_t, params, node);
-    if (tmpnode) {
-      printf("Insert Node %lu\n", tmpnode->value.num);
-      free(node);
-    } else {
-      printf("Insert Node %lu\n", node->value.num);
-    }
+  arr = new_array("array");
+
+  node = new_number(NULL, 4);
+  TAILQ_INSERT_TAIL(arr->value.array, node, next);
+
+  if ((tmpnode = RB_INSERT(params_t, params, arr)) != NULL) {
+    free(node);
+    err(1, "node with name '%s' already exists\n", arr->name);
   }
 
-  // TAILQ_FOREACH(node, &array, next) { printf("Dump Node %d\n", node->value);
-  // }
-
-  // while ((node = TAILQ_FIRST(&array)) != NULL) {
-  //   printf("Delete Node %d\n", node->value);
-  //   TAILQ_REMOVE(&array, node, next);
-  //   free(node);
-  // }
   return 0;
 }
