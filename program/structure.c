@@ -151,16 +151,12 @@ size_t params_size(params_t *p) {
 				size += sizeof(bool);
 				break;
 			}
-			case ATTR_NULL: {
-				size += sizeof(void *);
-				break;
-			}
 			case ATTR_NUMBER: {
 				size += sizeof(uint64_t);
 				break;
 			}
 			case ATTR_STRING: {
-				size += strlen(attr->value.string);
+				size += strlen(attr->value.string) + 1;
 				break;
 			}
 		}
@@ -196,6 +192,26 @@ void * params_pack(params_t *p) {
 		} else {
 			nvp.nvph_nitems = 0;
 			switch(attr->type) {
+				case ATTR_NULL: {
+					nvp.nvph_type = NV_TYPE_NULL;
+					nvp.nvph_datasize = 0;
+					memcpy(ptr, &nvp, sizeof(nvp));
+					ptr += sizeof(nvp);
+					memcpy(ptr, attr->name, nvp.nvph_namesize);
+					ptr += nvp.nvph_namesize;
+					break;
+				}
+				case ATTR_BOOL: {
+					nvp.nvph_type = NV_TYPE_BOOL;
+					nvp.nvph_datasize = sizeof(bool);
+					memcpy(ptr, &nvp, sizeof(nvp));
+					ptr += sizeof(nvp);
+					memcpy(ptr, attr->name, nvp.nvph_namesize);
+					ptr += nvp.nvph_namesize;
+					memcpy(ptr, &attr->value.b, nvp.nvph_datasize);
+					ptr += nvp.nvph_datasize;
+					break;
+				}
 				case ATTR_NUMBER: {
 					nvp.nvph_type = NV_TYPE_NUMBER;
 					nvp.nvph_datasize = sizeof(uint64_t);
@@ -203,12 +219,25 @@ void * params_pack(params_t *p) {
 					ptr += sizeof(nvp);
 					memcpy(ptr, attr->name, nvp.nvph_namesize);
 					ptr += nvp.nvph_namesize;
-					memcpy(ptr, &attr->value.num, nvp.nvph_datasize);
+					memcpy(ptr, &(attr->value.num), nvp.nvph_datasize);
+					ptr += nvp.nvph_datasize;
+					break;
+				}
+				case ATTR_STRING: {
+					nvp.nvph_type = NV_TYPE_STRING;
+					nvp.nvph_datasize = strlen(attr->value.string) + 1;
+					memcpy(ptr, &nvp, sizeof(nvp));
+					ptr += sizeof(nvp);
+					memcpy(ptr, attr->name, nvp.nvph_namesize);
+					ptr += nvp.nvph_namesize;
+					memcpy(ptr, attr->value.string, nvp.nvph_datasize);
+					ptr += nvp.nvph_datasize;
 					break;
 				}
 			}
 		}
 	}
+  buf[size] = 0;
 	return buf;
 }
 
@@ -221,20 +250,45 @@ int main() {
 	nvlist_t *nvl = NULL;
 
 	params = params_init();
-	node = new_number("some", 4);
+	node = new_number("a", 4);
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
+	node = new_bool("b", true);
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
+	node = new_string("c", "c");
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
+	node = new_null("z");
 	if (RB_INSERT(params_t, params, node) != NULL) {
 		free(node);
 		err(1, "node with name '%s' already exists\n", node->name);
 	}
 	size = params_size(params);
-	printf("Size of parameters: %lu\n", size);
 	buf = params_pack(params);
-	// for (size_t index = 0; index < size; ++index) {
+	// for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
 	// 	byte = buf + index;
-	// 	printf("0x%x ", *byte);
+	// 	printf("%x ", *byte);
 	// }
 	// printf("\n");
 	nvl = nvlist_unpack(buf, size, 0);
 	nvlist_dump(nvl, STDOUT_FILENO);
+	// nvl = nvlist_create(0);
+	// nvlist_add_number(nvl, "x", 4);
+	// nvlist_add_bool(nvl, "b", true);
+	// nvlist_add_string(nvl, "c", "c");
+	// nvlist_add_null(nvl, "z");
+	// buf = nvlist_pack(nvl, &size);
+	// for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
+	// 	byte = buf + index;
+	// 	printf("%x ", *byte);
+	// }
+	// printf("\n");
 	return 0;
 }
