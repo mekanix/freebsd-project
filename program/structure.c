@@ -77,11 +77,9 @@ RB_GENERATE(params_t, attr_t, entry, attr_name_compare)
 
 params_t * params_init() {
 	params_t *params = NULL;
-
 	params = malloc(sizeof(params_t));
 	memset(params, 0, sizeof(params_t));
 	RB_INIT(params);
-
 	return params;
 }
 
@@ -231,6 +229,23 @@ void * params_pack(params_t *p, uint8_t *buf) {
 			nvp.nvph_datasize = 0;
 
 			switch(attr->type & ~ATTR_ARRAY) {
+				case ATTR_BOOL: {
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						++nvp.nvph_nitems;
+						nvp.nvph_datasize += sizeof(bool);
+					}
+					nvp.nvph_type = NV_TYPE_BOOL_ARRAY;
+					memcpy(ptr, &nvp, sizeof(nvp));
+					ptr += sizeof(nvp);
+					memcpy(ptr, attr->name, nvp.nvph_namesize);
+					ptr += nvp.nvph_namesize;
+					node = NULL;
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						memcpy(ptr, &(node->value.b), nvp.nvph_datasize);
+						ptr += nvp.nvph_datasize;
+					}
+					break;
+				}
 				case ATTR_NUMBER: {
 					TAILQ_FOREACH(node, attr->value.array, next) {
 						++nvp.nvph_nitems;
@@ -244,6 +259,23 @@ void * params_pack(params_t *p, uint8_t *buf) {
 					node = NULL;
 					TAILQ_FOREACH(node, attr->value.array, next) {
 						memcpy(ptr, &(node->value.num), nvp.nvph_datasize);
+						ptr += nvp.nvph_datasize;
+					}
+					break;
+				}
+				case ATTR_STRING: {
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						++nvp.nvph_nitems;
+						nvp.nvph_datasize += strlen(node->value.string) + 1;
+					}
+					nvp.nvph_type = NV_TYPE_STRING_ARRAY;
+					memcpy(ptr, &nvp, sizeof(nvp));
+					ptr += sizeof(nvp);
+					memcpy(ptr, attr->name, nvp.nvph_namesize);
+					ptr += nvp.nvph_namesize;
+					node = NULL;
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						memcpy(ptr, node->value.string, strlen(node->value.string) + 1);
 						ptr += nvp.nvph_datasize;
 					}
 					break;
@@ -316,9 +348,16 @@ int main() {
 	uint8_t *byte = NULL;
 	params_t *params = NULL;
 	nvlist_t *nvl = NULL;
-	uint64_t number[4] = {5, 7, 13, 21};
+	uint64_t number[] = {5, 7, 13, 21};
 	array_t *arr = NULL;
+	bool truth[] = {true, false, false, true};
+	const char **strings;
 
+	strings = malloc(4 * sizeof(char *));
+	strings[0] = "one";
+	strings[1] = "two";
+	strings[2] = "three";
+	strings[3] = "four";
 	params = params_init();
 	// node = new_number("a", 4);
 	// if (RB_INSERT(params_t, params, node) != NULL) {
@@ -346,8 +385,8 @@ int main() {
 	// 	err(1, "node with name '%s' already exists\n", node->name);
 	// }
 	node = new_array("na");
-	node->type |= ATTR_NUMBER;
-	TAILQ_INSERT_TAIL(node->value.array, new_number(NULL, number[0]), next);
+	node->type |= ATTR_STRING;
+	TAILQ_INSERT_TAIL(node->value.array, new_string(NULL, "one"), next);
 	// TAILQ_INSERT_TAIL(node->value.array, new_number(NULL, number[1]), next);
 	if (RB_INSERT(params_t, params, node) != NULL) {
 		free(node);
@@ -356,26 +395,26 @@ int main() {
 
 	size = params_size(params);
 	buf = params_pack(params, NULL);
-	// for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
-	// 	byte = buf + index;
-	// 	printf("%x ", *byte);
-	// }
-	// printf("\n");
+	for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
+		byte = buf + index;
+		printf("%x ", *byte);
+	}
+	printf("\n");
 	nvl = nvlist_unpack(buf, size, 0);
 	nvlist_dump(nvl, STDOUT_FILENO);
-	// nvl = nvlist_create(0);
+	nvl = nvlist_create(0);
 	// nvlist_add_number(nvl, "x", 4);
 	// nvlist_add_bool(nvl, "b", true);
 	// nvlist_add_string(nvl, "c", "c");
 	// nvlist_add_null(nvl, "z");
 	// nvlist_t *newone = nvlist_create(0);
 	// nvlist_add_nvlist(nvl, "z", newone);
-	// nvlist_add_number_array(nvl, "na", number, 1);
-	// buf = nvlist_pack(nvl, &size);
-	// for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
-	// 	byte = buf + index;
-	// 	printf("%x ", *byte);
-	// }
-	// printf("\n");
+	nvlist_add_string_array(nvl, "na", strings, 1);
+	buf = nvlist_pack(nvl, &size);
+	for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
+		byte = buf + index;
+		printf("%x ", *byte);
+	}
+	printf("\n");
 	return 0;
 }
