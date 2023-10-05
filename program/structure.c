@@ -143,30 +143,57 @@ attr_t *new_nested(char *name) {
 }
 
 size_t params_size(params_t *p) {
-	size_t size = sizeof(struct nvlist_header);
 	attr_t *attr = NULL;
+	attr_t *node = NULL;
+	uint64_t nitems = 0;
+	size_t size = sizeof(struct nvlist_header);
 
 	RB_FOREACH(attr, params_t, p) {
 		size += sizeof(struct nvpair_header);
 		if (attr->name != NULL) {
 			size += strlen(attr->name) + 1;
 		}
-		switch(attr->type) {
-			case ATTR_BOOL: {
-				size += sizeof(bool);
-				break;
+		if (attr->type & ATTR_ARRAY) {
+			switch(attr->type & ~ATTR_ARRAY) {
+				case ATTR_BOOL: {
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						++nitems;
+					}
+					size += nitems * sizeof(bool);
+					break;
+				}
+				case ATTR_NUMBER: {
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						++nitems;
+					}
+					size += nitems * sizeof(uint64_t);
+					break;
+				}
+				case ATTR_STRING: {
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						size += strlen(node->value.string) + 1;
+					}
+					break;
+				}
 			}
-			case ATTR_NUMBER: {
-				size += sizeof(uint64_t);
-				break;
-			}
-			case ATTR_STRING: {
-				size += strlen(attr->value.string) + 1;
-				break;
-			}
-			case ATTR_NESTED: {
-				size += params_size(attr->value.params);
-				break;
+		} else {
+			switch(attr->type) {
+				case ATTR_BOOL: {
+					size += sizeof(bool);
+					break;
+				}
+				case ATTR_NUMBER: {
+					size += sizeof(uint64_t);
+					break;
+				}
+				case ATTR_STRING: {
+					size += strlen(attr->value.string) + 1;
+					break;
+				}
+				case ATTR_NESTED: {
+					size += params_size(attr->value.params);
+					break;
+				}
 			}
 		}
 	}
@@ -198,9 +225,31 @@ void * params_pack(params_t *p, uint8_t *buf) {
 	ptr = buf + sizeof(nvl);
 	RB_FOREACH(attr, params_t, p) {
 		nvp.nvph_namesize = strlen(attr->name) + 1;
+		nvp.nvph_nitems = 0;
 		if (attr->type & ATTR_ARRAY) {
+			attr_t *node = NULL;
+			nvp.nvph_datasize = 0;
+
+			switch(attr->type & ~ATTR_ARRAY) {
+				case ATTR_NUMBER: {
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						++nvp.nvph_nitems;
+						nvp.nvph_datasize += sizeof(uint64_t);
+					}
+					nvp.nvph_type = NV_TYPE_NUMBER_ARRAY;
+					memcpy(ptr, &nvp, sizeof(nvp));
+					ptr += sizeof(nvp);
+					memcpy(ptr, attr->name, nvp.nvph_namesize);
+					ptr += nvp.nvph_namesize;
+					node = NULL;
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						memcpy(ptr, &(node->value.num), nvp.nvph_datasize);
+						ptr += nvp.nvph_datasize;
+					}
+					break;
+				}
+			}
 		} else if (attr->type & ATTR_NESTED) {
-			nvp.nvph_nitems = 0;
 			nvp.nvph_type = NV_TYPE_NVLIST;
 			nvp.nvph_datasize = params_size(attr->value.params);
 			memcpy(ptr, &nvp, sizeof(nvp));
@@ -209,7 +258,6 @@ void * params_pack(params_t *p, uint8_t *buf) {
 			ptr += nvp.nvph_namesize;
 			params_pack(attr->value.params, ptr);
 		} else {
-			nvp.nvph_nitems = 0;
 			switch(attr->type) {
 				case ATTR_NULL: {
 					nvp.nvph_type = NV_TYPE_NULL;
@@ -264,36 +312,48 @@ int main() {
 	size_t size = 0;
 	void *buf = NULL;
 	attr_t *node = NULL;
+	attr_t *tmpnode = NULL;
 	uint8_t *byte = NULL;
 	params_t *params = NULL;
 	nvlist_t *nvl = NULL;
+	uint64_t number[4] = {5, 7, 13, 21};
+	array_t *arr = NULL;
 
 	params = params_init();
-	node = new_number("a", 4);
+	// node = new_number("a", 4);
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_bool("b", true);
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_string("c", "c");
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_null("x");
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_nested("z");
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	node = new_array("na");
+	node->type |= ATTR_NUMBER;
+	TAILQ_INSERT_TAIL(node->value.array, new_number(NULL, number[0]), next);
+	// TAILQ_INSERT_TAIL(node->value.array, new_number(NULL, number[1]), next);
 	if (RB_INSERT(params_t, params, node) != NULL) {
 		free(node);
 		err(1, "node with name '%s' already exists\n", node->name);
 	}
-	node = new_bool("b", true);
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_string("c", "c");
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_null("x");
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_nested("z");
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
+
 	size = params_size(params);
 	buf = params_pack(params, NULL);
 	// for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
@@ -310,6 +370,7 @@ int main() {
 	// nvlist_add_null(nvl, "z");
 	// nvlist_t *newone = nvlist_create(0);
 	// nvlist_add_nvlist(nvl, "z", newone);
+	// nvlist_add_number_array(nvl, "na", number, 1);
 	// buf = nvlist_pack(nvl, &size);
 	// for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
 	// 	byte = buf + index;
