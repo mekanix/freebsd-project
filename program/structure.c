@@ -275,8 +275,9 @@ void * params_pack(params_t *p, uint8_t *buf) {
 					ptr += nvp.nvph_namesize;
 					node = NULL;
 					TAILQ_FOREACH(node, attr->value.array, next) {
-						memcpy(ptr, node->value.string, strlen(node->value.string) + 1);
-						ptr += nvp.nvph_datasize;
+						size = strlen(node->value.string) + 1;
+						memcpy(ptr, node->value.string, size);
+						ptr += size;
 					}
 					break;
 				}
@@ -348,46 +349,40 @@ int main() {
 	uint8_t *byte = NULL;
 	params_t *params = NULL;
 	nvlist_t *nvl = NULL;
-	uint64_t number[] = {5, 7, 13, 21};
 	array_t *arr = NULL;
-	bool truth[] = {true, false, false, true};
-	const char **strings;
 
-	strings = malloc(4 * sizeof(char *));
-	strings[0] = "one";
-	strings[1] = "two";
-	strings[2] = "three";
-	strings[3] = "four";
 	params = params_init();
-	// node = new_number("a", 4);
-	// if (RB_INSERT(params_t, params, node) != NULL) {
-	// 	free(node);
-	// 	err(1, "node with name '%s' already exists\n", node->name);
-	// }
-	// node = new_bool("b", true);
-	// if (RB_INSERT(params_t, params, node) != NULL) {
-	// 	free(node);
-	// 	err(1, "node with name '%s' already exists\n", node->name);
-	// }
-	// node = new_string("c", "c");
-	// if (RB_INSERT(params_t, params, node) != NULL) {
-	// 	free(node);
-	// 	err(1, "node with name '%s' already exists\n", node->name);
-	// }
-	// node = new_null("x");
-	// if (RB_INSERT(params_t, params, node) != NULL) {
-	// 	free(node);
-	// 	err(1, "node with name '%s' already exists\n", node->name);
-	// }
-	// node = new_nested("z");
-	// if (RB_INSERT(params_t, params, node) != NULL) {
-	// 	free(node);
-	// 	err(1, "node with name '%s' already exists\n", node->name);
-	// }
+	node = new_number("a", 4);
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
+	node = new_bool("b", true);
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
+	node = new_string("c", "c");
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
+	node = new_null("x");
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
+	node = new_nested("z");
+	if (RB_INSERT(params_t, params, node) != NULL) {
+		free(node);
+		err(1, "node with name '%s' already exists\n", node->name);
+	}
 	node = new_array("na");
 	node->type |= ATTR_STRING;
-	TAILQ_INSERT_TAIL(node->value.array, new_string(NULL, "one"), next);
-	// TAILQ_INSERT_TAIL(node->value.array, new_number(NULL, number[1]), next);
+	tmpnode = new_string(NULL, "one");
+	TAILQ_INSERT_TAIL(node->value.array, tmpnode, next);
+	tmpnode = new_string(NULL, "two");
+	TAILQ_INSERT_TAIL(node->value.array, tmpnode, next);
 	if (RB_INSERT(params_t, params, node) != NULL) {
 		free(node);
 		err(1, "node with name '%s' already exists\n", node->name);
@@ -395,26 +390,7 @@ int main() {
 
 	size = params_size(params);
 	buf = params_pack(params, NULL);
-	for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
-		byte = buf + index;
-		printf("%x ", *byte);
-	}
-	printf("\n");
 	nvl = nvlist_unpack(buf, size, 0);
 	nvlist_dump(nvl, STDOUT_FILENO);
-	nvl = nvlist_create(0);
-	// nvlist_add_number(nvl, "x", 4);
-	// nvlist_add_bool(nvl, "b", true);
-	// nvlist_add_string(nvl, "c", "c");
-	// nvlist_add_null(nvl, "z");
-	// nvlist_t *newone = nvlist_create(0);
-	// nvlist_add_nvlist(nvl, "z", newone);
-	nvlist_add_string_array(nvl, "na", strings, 1);
-	buf = nvlist_pack(nvl, &size);
-	for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
-		byte = buf + index;
-		printf("%x ", *byte);
-	}
-	printf("\n");
 	return 0;
 }
