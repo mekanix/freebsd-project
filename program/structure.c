@@ -198,7 +198,7 @@ size_t params_size(params_t *p) {
 	return size;
 }
 
-void * params_pack(params_t *p, uint8_t *buf) {
+void * params_pack(params_t *p, uint8_t *buf, size_t *sz) {
 	size_t size = 0;
 	uint8_t *ptr = NULL;
 	attr_t *attr = NULL;
@@ -213,6 +213,7 @@ void * params_pack(params_t *p, uint8_t *buf) {
 	if (buf == NULL) {
 		buf = malloc(size);
 	}
+	*sz = size;
 
 	nvl.nvlh_magic = NVLIST_HEADER_MAGIC;
 	nvl.nvlh_version = NVLIST_HEADER_VERSION;
@@ -232,8 +233,8 @@ void * params_pack(params_t *p, uint8_t *buf) {
 				case ATTR_BOOL: {
 					TAILQ_FOREACH(node, attr->value.array, next) {
 						++nvp.nvph_nitems;
-						nvp.nvph_datasize += sizeof(bool);
 					}
+					nvp.nvph_datasize = nvp.nvph_nitems * sizeof(bool);
 					nvp.nvph_type = NV_TYPE_BOOL_ARRAY;
 					memcpy(ptr, &nvp, sizeof(nvp));
 					ptr += sizeof(nvp);
@@ -249,8 +250,8 @@ void * params_pack(params_t *p, uint8_t *buf) {
 				case ATTR_NUMBER: {
 					TAILQ_FOREACH(node, attr->value.array, next) {
 						++nvp.nvph_nitems;
-						nvp.nvph_datasize += sizeof(uint64_t);
 					}
+					nvp.nvph_datasize = nvp.nvph_nitems * sizeof(uint64_t);
 					nvp.nvph_type = NV_TYPE_NUMBER_ARRAY;
 					memcpy(ptr, &nvp, sizeof(nvp));
 					ptr += sizeof(nvp);
@@ -283,13 +284,17 @@ void * params_pack(params_t *p, uint8_t *buf) {
 				}
 			}
 		} else if (attr->type & ATTR_NESTED) {
+			size_t size;
+			uint8_t *bytes = ptr;
+
 			nvp.nvph_type = NV_TYPE_NVLIST;
-			nvp.nvph_datasize = params_size(attr->value.params);
-			memcpy(ptr, &nvp, sizeof(nvp));
 			ptr += sizeof(nvp);
 			memcpy(ptr, attr->name, nvp.nvph_namesize);
 			ptr += nvp.nvph_namesize;
-			params_pack(attr->value.params, ptr);
+			params_pack(attr->value.params, ptr, &size);
+			nvp.nvph_datasize = size;
+			memcpy(bytes, &nvp, sizeof(nvp));
+			ptr += nvp.nvph_datasize;
 		} else {
 			switch(attr->type) {
 				case ATTR_NULL: {
@@ -388,8 +393,7 @@ int main() {
 		err(1, "node with name '%s' already exists\n", node->name);
 	}
 
-	size = params_size(params);
-	buf = params_pack(params, NULL);
+	buf = params_pack(params, NULL, &size);
 	nvl = nvlist_unpack(buf, size, 0);
 	nvlist_dump(nvl, STDOUT_FILENO);
 	return 0;
