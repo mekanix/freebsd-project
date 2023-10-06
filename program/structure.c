@@ -75,7 +75,7 @@ static int attr_name_compare(const attr_t *a1, const attr_t *a2) {
 
 RB_GENERATE(params_t, attr_t, entry, attr_name_compare)
 
-params_t * params_init() {
+params_t *params_init() {
 	params_t *params = NULL;
 	params = malloc(sizeof(params_t));
 	memset(params, 0, sizeof(params_t));
@@ -170,6 +170,12 @@ size_t params_size(params_t *p) {
 				case ATTR_STRING: {
 					TAILQ_FOREACH(node, attr->value.array, next) {
 						size += strlen(node->value.string) + 1;
+					}
+					break;
+				}
+				case ATTR_NESTED: {
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						size += params_size(node->value.params);
 					}
 					break;
 				}
@@ -282,6 +288,22 @@ void * params_pack(params_t *p, uint8_t *buf, size_t *sz) {
 					}
 					break;
 				}
+				case ATTR_NESTED: {
+					size_t size = 0;
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						++nvp.nvph_nitems;
+					}
+					nvp.nvph_type = NV_TYPE_NVLIST_ARRAY;
+					memcpy(ptr, &nvp, sizeof(nvp));
+					ptr += sizeof(nvp);
+					memcpy(ptr, attr->name, nvp.nvph_namesize);
+					ptr += nvp.nvph_namesize;
+					TAILQ_FOREACH(node, attr->value.array, next) {
+						params_pack(node->value.params, ptr, &size);
+						ptr += size;
+					}
+					break;
+				}
 			}
 		} else if (attr->type & ATTR_NESTED) {
 			size_t size;
@@ -353,46 +375,71 @@ int main() {
 	attr_t *tmpnode = NULL;
 	params_t *params = NULL;
 	nvlist_t *nvl = NULL;
+	nvlist_t *tmpnvl = NULL;
+	uint8_t *byte = NULL;
 
 	params = params_init();
-	node = new_number("a", 4);
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_bool("b", true);
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_string("c", "c");
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_null("x");
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_nested("z");
-	if (RB_INSERT(params_t, params, node) != NULL) {
-		free(node);
-		err(1, "node with name '%s' already exists\n", node->name);
-	}
-	node = new_array("na");
-	node->type |= ATTR_STRING;
-	tmpnode = new_string(NULL, "one");
+	// node = new_number("a", 4);
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_bool("b", true);
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_string("c", "c");
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_null("x");
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	// node = new_nested("z");
+	// tmpnode = new_number("nested", 5);
+	// if (RB_INSERT(params_t, node->value.params, tmpnode) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", tmpnode->name);
+	// }
+	// if (RB_INSERT(params_t, params, node) != NULL) {
+	// 	free(node);
+	// 	err(1, "node with name '%s' already exists\n", node->name);
+	// }
+	node = new_array("n");
+	node->type |= ATTR_NESTED;
+	tmpnode = new_params(NULL);
 	TAILQ_INSERT_TAIL(node->value.array, tmpnode, next);
-	tmpnode = new_string(NULL, "two");
+	tmpnode = new_params(NULL);
 	TAILQ_INSERT_TAIL(node->value.array, tmpnode, next);
 	if (RB_INSERT(params_t, params, node) != NULL) {
 		free(node);
 		err(1, "node with name '%s' already exists\n", node->name);
 	}
+
 
 	buf = params_pack(params, NULL, &size);
 	nvl = nvlist_unpack(buf, size, 0);
 	nvlist_dump(nvl, STDOUT_FILENO);
+	for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
+		byte = buf + index;
+		printf("%x ", *byte);
+	}
+	printf("\n");
+
+	nvl = nvlist_create(0);
+	tmpnvl = nvlist_create(0);
+	nvlist_add_nvlist_array(nvl, "n", (const nvlist_t * const *)&tmpnvl, 1);
+	tmpnvl = nvlist_create(0);
+	nvlist_append_nvlist_array(nvl, "n", tmpnvl);
+	buf = nvlist_pack(nvl, &size);
+	for (size_t index = sizeof(struct nvlist_header); index < size; ++index) {
+		byte = buf + index;
+		printf("%x ", *byte);
+	}
+	printf("\n");
 	return 0;
 }
