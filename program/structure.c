@@ -10,16 +10,16 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ATTR_RO 0x001
-#define ATTR_NODELETE 0x002
+#define ATTR_RO		0x001
+#define ATTR_NODELETE	0x002
 
-#define ATTR_BOOL 0x010
-#define ATTR_NUMBER 0x020
-#define ATTR_STRING 0x040
-#define ATTR_NULL 0x080
-#define ATTR_ARRAY 0x100
-#define ATTR_NESTED 0x200
-#define ATTR_SIMPLE_MASK (ATTR_BOOL | ATTR_NUMBER | ATTR_STRING | ATTR_NULL)
+#define ATTR_BOOL	0x010
+#define ATTR_NUMBER	0x020
+#define ATTR_STRING	0x040
+#define ATTR_NULL	0x080
+#define ATTR_ARRAY	0x100
+#define ATTR_NESTED	0x200
+#define ATTR_SIMPLE	(ATTR_BOOL | ATTR_NUMBER | ATTR_STRING | ATTR_NULL)
 
 #define	NVLIST_HEADER_MAGIC	0x6c
 #define	NVLIST_HEADER_VERSION	0x00
@@ -342,7 +342,7 @@ void * params_pack(params_t *p, uint8_t *buf, size_t *sz) {
 			}
 		}
 	}
-  buf[size] = 0;
+	buf[size] = 0;
 	return buf;
 }
 
@@ -351,10 +351,8 @@ int main() {
 	void *buf = NULL;
 	attr_t *node = NULL;
 	attr_t *tmpnode = NULL;
-	uint8_t *byte = NULL;
 	params_t *params = NULL;
 	nvlist_t *nvl = NULL;
-	array_t *arr = NULL;
 
 	params = params_init();
 	node = new_number("a", 4);
